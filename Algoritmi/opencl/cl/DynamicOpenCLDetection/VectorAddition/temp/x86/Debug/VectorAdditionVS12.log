@@ -1,0 +1,23 @@
+﻿Build started 4/24/2014 11:25:54 AM.
+     1>Project "C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\VectorAddition\VectorAdditionVS12.vcxproj" on node 2 (Build target(s)).
+     1>ClCompile:
+         C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\bin\CL.exe /c /I../../../../../include /I"C:\Program Files (x86)\AMD APP SDK\2.9\/include" /Zi /nologo /W3 /WX- /Od /Ob0 /Oy- /D WIN32 /D _WINDOWS /D _DEBUG /D _CRT_SECURE_NO_WARNINGS /D "CMAKE_INTDIR=\"Debug\"" /D VectorAddition_EXPORTS /Gm /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /GR /Fo"temp\x86\Debug\\" /Fd"C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\bin/x86/Debug/VectorAddition.pdb" /Gd /TP /wd4005 /wd4996 /analyze- /errorReport:prompt VectorAddition.cpp
+         VectorAddition.cpp
+       Link:
+         C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\bin\link.exe /ERRORREPORT:PROMPT /OUT:"C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\bin\x86\Debug\VectorAddition.dll" /INCREMENTAL /NOLOGO /LIBPATH:..\..\..\..\lib\win32\ /LIBPATH:"C:\Program Files (x86)\AMD APP SDK\2.9\\lib\x86\\" kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib OpenCL.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\bin\x86\Debug\VectorAddition.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\bin/x86/Debug/VectorAddition.lib" /MACHINE:X86 /SAFESEH:NO /DLL temp\x86\Debug\VectorAddition.obj
+            Creating library C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\bin/x86/Debug/VectorAddition.lib and object C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\bin/x86/Debug/VectorAddition.exp
+         VectorAdditionVS12.vcxproj -> C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\bin\x86\Debug\VectorAddition.dll
+       PostBuildEvent:
+         copy VectorAddition_Kernel.cl "C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\VectorAddition_Kernel.cl" /Y
+         copy VectorAddition_Kernel.cl "C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\cl\DynamicOpenCLDetection\VectorAddition_Kernel.cl" /Y
+         copy VectorAddition_Kernel.cl "C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\bin\x86\Debug\VectorAddition_Kernel.cl" /Y
+         :VCEnd
+                 1 file(s) copied.
+         The system cannot find the path specified.
+                 0 file(s) copied.
+                 1 file(s) copied.
+     1>Done Building Project "C:\Users\Gabriele\AMD APP SDK\2.9\samples\opencl\cl\DynamicOpenCLDetection\VectorAddition\VectorAdditionVS12.vcxproj" (Build target(s)).
+
+Build succeeded.
+
+Time Elapsed 00:00:05.99
