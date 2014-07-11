@@ -3,7 +3,8 @@
 let datafolder = @"X:\Projects\featureBasedScheduling\Dati"
 
 // merge convolution files
-let csvfiles = System.IO.Directory.EnumerateFiles(datafolder, "FeatureExtractionResults.csv")
+//let csvfiles = System.IO.Directory.EnumerateFiles(datafolder, "FeatureExtractionResults.csv")
+let csvfiles = System.IO.Directory.EnumerateFiles(datafolder, "FeatureExtractionResultsNoBranch.csv")
 let filename = csvfiles |> Seq.head
 let fieldNames =
     let lines = System.IO.File.ReadAllLines(filename)
@@ -23,32 +24,37 @@ let allfields = csvfiles |> Seq.map handleFile |> Seq.concat |> Seq.toArray
 
 fieldNames |> Array.iteri (fun i v -> System.Console.WriteLine(@"{0} {1}", i, v))
 
+//allfields.[0].Length
 
 let getColumn i = allfields |> Array.map (fun ary -> ary.[i])
 
-let alg = getColumn 25
+let normColumn col:float[] = 
+    let maxCol = col |> Array.max
+    col |> Array.map (fun v -> if maxCol>0.0 then v/maxCol else 0.0)
+
+let alg = getColumn 25 
 
 let discreteGPUTime = getColumn 22
 let integratedGPUTime = getColumn 23
-let CPUTime = getColumn 24
+let CPUTime = getColumn 24 
 
 let workSize = allfields |> Array.map (fun ary -> ary.[16] * ary.[17] * ary.[18])
 
 let dataTrasfFromHost = getColumn 13
 let dataTrasfFromDevice = getColumn 14
 
-let readAccessGlobal = getColumn 1
-let writeAccessGlobal = getColumn 2
-let readAccessLocal = getColumn 3
-let writeAccessLocal = getColumn 4
-let readAccessConstant = getColumn 5
+let readAccessGlobal = getColumn 1 
+let writeAccessGlobal = getColumn 2 
+let readAccessLocal = getColumn 3 
+let writeAccessLocal = getColumn 4 
+let readAccessConstant = getColumn 5 
 
 let mulArrays (a:float[]) (b:float[]) = Array.map2 (fun v w -> v*w) a b 
 
-let fixWithWorkSize a = mulArrays workSize a
+let fixWithWorkSize a = mulArrays workSize a 
 
 let arithmetic = fixWithWorkSize (getColumn 6)
-let logic = fixWithWorkSize (getColumn 7)
+let logic = fixWithWorkSize (getColumn 7) 
 let bitwise = fixWithWorkSize (getColumn 8)
 let comparison = fixWithWorkSize (getColumn 9)
 let pow = fixWithWorkSize (getColumn 10)
@@ -57,7 +63,7 @@ let hypot = fixWithWorkSize (getColumn 12)
 
 let sumArrays (a:float[]) (b:float[]) = Array.map2 (fun v w -> v+w) a b 
 let simple_op =  (sumArrays logic bitwise)  |> sumArrays comparison
-let complex_op = sumArrays arithmetic pow |> sumArrays sqrt_op |> sumArrays hypot
+let complex_op = sumArrays arithmetic pow |> sumArrays sqrt_op |> sumArrays hypot 
 
 //let readAccessGlobal = getColumn 1
 //let writeAccessGlobal = getColumn 2
@@ -78,9 +84,9 @@ let derived = divArrays (sumArrays (dataTrasfFromHost) (dataTrasfFromDevice)) me
 open MathNet.Numerics
 open MathNet.Numerics.LinearAlgebra.Double
 
-let target = 2
+//let target = 2
 
-let basisSize = 2
+//let basisSize = 2
 
 let rnd = new System.Random()
 
@@ -101,7 +107,11 @@ let attempt targetAlg basisSize =
     let target = casesTargetAlg |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.head
     // pick a random base to build the model with
     let basis = casesNoTargetAlg |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.take basisSize |> Seq.toArray
-    let M_all = DenseMatrix.OfRows(5,arithmetic.Length, [| dataTrasfFromHost; dataTrasfFromDevice; readAccessGlobal; simple_op; complex_op (*; derived *) |])
+    let M_all = DenseMatrix.OfRows(5,arithmetic.Length, [| dataTrasfFromHost |> normColumn; 
+                                                            dataTrasfFromDevice |> normColumn; 
+                                                            readAccessGlobal |> normColumn; 
+                                                            simple_op |> normColumn; 
+                                                            complex_op  |> normColumn (*; derived *) |])
     let b = DenseVector.OfEnumerable( M_all.Column(target) )
     let M = DenseMatrix.OfColumnVectors(  M_all.ColumnEnumerator() |> Seq.filter(fun (i,v) -> contains basis i) |> Seq.map snd |> Seq.toArray )
 
@@ -113,9 +123,9 @@ let attempt targetAlg basisSize =
         let prediction = DenseMatrix.OfRows(1, a.Length, [| a |]).Multiply(x) |> Seq.head
         prediction, measured, (prediction - measured)/measured
 
-    let p1,m1,e1 = tryPredict discreteGPUTime
-    let p2,m2,e2 = tryPredict integratedGPUTime
-    let p3,m3,e3 = tryPredict CPUTime
+    let p1,m1,e1 = tryPredict (discreteGPUTime |> normColumn)
+    let p2,m2,e2 = tryPredict (integratedGPUTime  |> normColumn)
+    let p3,m3,e3 = tryPredict (CPUTime |> normColumn)
 
     // returns errors
     // e1,e2,e3
@@ -125,22 +135,36 @@ let attempt targetAlg basisSize =
     let bestPredicted,_ = predictions |> Array.sortBy (fun (i,v) -> v) |> Seq.head
     let bestMeasured,_ = measures |> Array.sortBy (fun (i,v) -> v) |> Seq.head
     bestPredicted = bestMeasured
+    //(p1-m1)/m1,(p2-m2)/m2,(p3-m3)/m3
+(*
+let r1,r2,r3 = Array.init 1000 (fun i -> attempt 3.0 20) |> Array.unzip3
 
+let percentile (p:float) (data:float[]) =
+    let sorted = data |> Array.map abs |> Array.sort
+    let idx = int(float(sorted.Length) * p)
+    sorted.[idx]
 
+let percentiles data =
+    percentile 0.25 data, percentile 0.5 data, percentile 0.75 data
+
+percentiles r2
+*)
 // evaluate errors on best device
 let doManyAttempts target basissize =
     let res = Array.init 1000 (fun _ -> attempt target basissize) 
     let ok = res |> Array.filter (fun b -> b) |> Array.length
     float(ok)/float(res.Length)
 
-let test n =
+//doManyAttempts 1.0 10
+
+let test () =
     for i in 1..3..40 do
-        let ok = doManyAttempts 4.0 n
+        let ok = doManyAttempts 5.0 i
         System.Console.WriteLine(@"{0} {1}", i, ok)
 
-test 39
+test()
 
-let results = Array.init 40 (fun target -> Array.init 39 (fun measures -> doManyAttempts (target) (1 + measures)) )
+let results = Array.init 5 (fun target -> Array.init 10 (fun measures -> doManyAttempts (float(target+1)) (1 + measures*4)) )
 
 let sb = new System.Text.StringBuilder()
 sb.AppendLine(@"#target basis_size perc_ok")
