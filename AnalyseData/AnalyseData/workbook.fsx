@@ -1,5 +1,11 @@
 ﻿open System
 
+#I @"X:\Projects\EnergonWin8\packages\FSharp.Charting.0.90.6"
+#load "FSharp.Charting.fsx"
+
+
+open FSharp.Charting
+
 let datafolder = @"X:\Projects\featureBasedScheduling\Dati"
 
 // merge convolution files
@@ -28,9 +34,12 @@ fieldNames |> Array.iteri (fun i v -> System.Console.WriteLine(@"{0} {1}", i, v)
 
 let getColumn i = allfields |> Array.map (fun ary -> ary.[i])
 
+let inline sqr x = x * x
 let normColumn col:float[] = 
-    let maxCol = col |> Array.max
-    col |> Array.map (fun v -> if maxCol>0.0 then v/maxCol else 0.0)
+    let avg = col |> Array.average
+    let stddev = col |> Array.map ((-) avg) |> Array.map sqr |> Array.average |> sqrt
+    //col |> Array.map (fun v -> (v - avg) / stddev)
+    col
 
 let alg = getColumn 25 
 
@@ -90,6 +99,13 @@ open MathNet.Numerics.LinearAlgebra.Double
 
 let rnd = new System.Random()
 
+
+
+
+
+// ------------------------------------------------------------------------------
+
+
 // best device prediction
 //let targetAlg =  2.0
 
@@ -102,9 +118,9 @@ let attempt targetAlg basisSize =
     let filteredAlg = alg |> Array.mapi (fun i v -> i,v) |> Array.filter (fun (i,v) -> contains filtered i) |> Seq.map snd |> Seq.toArray
     // split cases into belonging to target algorithm or not
     let casesTargetAlg = filteredAlg |> Array.mapi (fun i v -> i,v) |> Array.filter (fun (i,v) -> v=targetAlg) |> Array.map fst
-    let casesNoTargetAlg = filteredAlg |> Array.mapi (fun i v -> i,v) |> Array.filter (fun (i,v) -> v <> targetAlg) |> Array.map fst
     // pick a target case belonging to target algorithm
     let target = casesTargetAlg |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.head
+    let casesNoTargetAlg = filteredAlg |> Array.mapi (fun i v -> i,v) |> Array.filter (fun (i,v) -> (*v <> targetAlg*) true) |> Array.map fst
     // pick a random base to build the model with
     let basis = casesNoTargetAlg |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.take basisSize |> Seq.toArray
     let M_all = DenseMatrix.OfRows(5,arithmetic.Length, [| dataTrasfFromHost |> normColumn; 
@@ -130,14 +146,34 @@ let attempt targetAlg basisSize =
     // returns errors
     // e1,e2,e3
     // guess
-    let predictions = [| 0,p1; 1,p2; 2,p3 |]
-    let measures = [| 0,m1; 1,m2; 2,m3 |]
+    let predictions = [| 0,p3; 1,p1; 2,p2 |]
+    let measures = [| 0,m3; 1,m1; 2,m2 |]
     let bestPredicted,_ = predictions |> Array.sortBy (fun (i,v) -> v) |> Seq.head
     let bestMeasured,_ = measures |> Array.sortBy (fun (i,v) -> v) |> Seq.head
     bestPredicted = bestMeasured
     //(p1-m1)/m1,(p2-m2)/m2,(p3-m3)/m3
+    //p1,m1,p2,m2,p3,m3
 (*
-let r1,r2,r3 = Array.init 1000 (fun i -> attempt 3.0 20) |> Array.unzip3
+// raw data
+let doCase target size = Array.init 1000 (fun _ -> attempt target size )
+let res = doCase 1.0 10
+let dev1 = res |> Array.map (fun (a,b,c,d,e,f) -> a,b)
+let dev2 = res |> Array.map (fun (a,b,c,d,e,f) -> c,d)
+let dev3 = res |> Array.map (fun (a,b,c,d,e,f) -> e,f)
+
+#I @"X:\Projects\EnergonWin8\packages\FSharp.Charting.0.90.6"
+#load "FSharp.Charting.fsx"
+
+
+open FSharp.Charting
+
+Chart.Point dev1
+
+*)
+
+(*
+// fun with error percentiles 
+//let r1,r2,r3 = Array.init 1000 (fun i -> attempt 3.0 20) |> Array.unzip3
 
 let percentile (p:float) (data:float[]) =
     let sorted = data |> Array.map abs |> Array.sort
@@ -147,8 +183,13 @@ let percentile (p:float) (data:float[]) =
 let percentiles data =
     percentile 0.25 data, percentile 0.5 data, percentile 0.75 data
 
-percentiles r2
+let doCase alg size = 
+    Array.init 1000 (fun i -> attempt alg size) |> Array.map (fun (a,b,c) -> [|a;b;c|]) |> Array.concat
+let r = doCase 5.0 20
+
+percentiles r
 *)
+
 // evaluate errors on best device
 let doManyAttempts target basissize =
     let res = Array.init 1000 (fun _ -> attempt target basissize) 
@@ -164,7 +205,7 @@ let test () =
 
 test()
 
-let results = Array.init 5 (fun target -> Array.init 10 (fun measures -> doManyAttempts (float(target+1)) (1 + measures*4)) )
+let results = Array.init 5 (fun target -> Array.init 10 (fun measures -> doManyAttempts (float(target+1)) (1 + 2*measures)) )
 
 let sb = new System.Text.StringBuilder()
 sb.AppendLine(@"#target basis_size perc_ok")
@@ -273,8 +314,157 @@ experimentPredictDevice 25
 experimentPredictDevice 30
 
 
+// ------------- CON ANDREA ----------------
+// M matrice misurazioni
+// x surrogato
+// b misure target program
+// t target measure
+// T misure target rei programmi benchamerk
+// t = T x
+// M x = b
+// x = M^{-1} b
+// M = U S V*
+// pseudoinversa di M = M* = U* S* V
+// t = T x = T U* S* V b
+
+let pseudoinverse (M:Matrix) =
+  let D = M.Svd(true)
+  let W = D.W()
+  let s = D.S()
+  let tolerance = Precision.EpsilonOf(2.0) * float(Math.Max(M.RowCount, M.ColumnCount)) * W.[0, 0]
+  for i = 0 to s.Count-1 do
+    s.[i] <- if s.[i] <= tolerance then 0.0 else 1.0 / s.[i]
+  W.SetDiagonal(s)
+  (D.U() * W * D.VT()).Transpose()
+
+let isfinite x =
+      not (Double.IsNaN(x) || Double.IsInfinity(x))
+
+type Result = {
+ M: DenseMatrix;
+ p1 : float;
+ p2: float;
+ p3: float;
+ m1: float;
+ m2: float;
+ m3: float;
+ cond: float;
+}
+
+let contains (ary: int array) (value: int) =
+  ary |> Array.map (fun v -> v = value) |> Array.exists (id)
+
+let randomizedTargetBasis targetAlg basisSize =
+    // filter out cases with work size too little, as .net overhead is larger than actual completion time
+    let lowerWorksize = 1024.0*1024.0
+    let filtered = workSize |> Array.mapi (fun i v -> i,v) |> Array.filter (fun (i,v) -> v >= lowerWorksize) |> Array.map fst
+    let filteredAlg = alg |> Array.mapi (fun i v -> i,v) |> Array.filter (fun (i,v) -> contains filtered i) |> Seq.map snd |> Seq.toArray
+    // split cases into belonging to target algorithm or not
+    let casesTargetAlg = filteredAlg |> Array.mapi (fun i v -> i,v) |> Array.filter (fun (i,v) -> v=targetAlg) |> Array.map fst
+    // pick a target case belonging to target algorithm
+    let target = casesTargetAlg |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.head
+    let casesNoTargetAlg = filteredAlg |> Array.mapi (fun i v -> i,v) |> Array.filter (fun (i,v) -> v <> targetAlg || true) |> Array.map fst
+    // pick a random base to build the model with
+    let basis = casesNoTargetAlg |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.take basisSize |> Seq.toArray
+    target, basis
+
+let attempt target basis =
+    let M_all = DenseMatrix.OfRows(4,arithmetic.Length, [| //dataTrasfFromHost |> normColumn; 
+                                                            dataTrasfFromDevice |> normColumn; 
+                                                            readAccessGlobal |> normColumn; 
+                                                            simple_op |> normColumn; 
+                                                            complex_op  |> normColumn (*; derived *) |])
+    let b = DenseVector.OfEnumerable( M_all.Column(target) )
+    let M = DenseMatrix.OfColumnVectors(  M_all.ColumnEnumerator() |> Seq.filter(fun (i,v) -> contains basis i) |> Seq.map snd |> Seq.toArray )
+
+    let cond = M.ConditionNumber()
+    let x = M.Svd(true).Solve(b)
+    let inv = pseudoinverse M
+    //printfn "%A" basis
+    //printfn "%A\n%A\n%A\n%A" (M.ConditionNumber()) (M.ToString()) (x) ((inv*b))
+
+    let tryPredict (measures:float array) = 
+        let a = measures |> Seq.mapi (fun i v -> i,v) |> Seq.filter (fun (i,v) -> contains basis i ) |> Seq.map snd |> Seq.toArray
+        let measured = measures |> Seq.mapi (fun i v -> i,v) |> Seq.filter (fun (i,v) -> i = target ) |> Seq.map snd |> Seq.head
+        let origprediction = DenseMatrix.OfRows(1, a.Length, [| a |]).Multiply(x) |> Seq.head
+        let prediction = DenseMatrix.OfRows(1, a.Length, [| a |]).Multiply(inv).Multiply(b) |> Seq.head
+        //let prediction = origprediction
+        //printfn "%A %A" origprediction prediction
+        prediction, measured, (prediction - measured)/measured
+
+    let p1,m1,e1 = tryPredict (discreteGPUTime |> normColumn)
+    let p2,m2,e2 = tryPredict (integratedGPUTime  |> normColumn)
+    let p3,m3,e3 = tryPredict (CPUTime |> normColumn)
+
+    // returns errors
+    // e1,e2,e3
+    // guess
+    let predictions = [| 0,p1; 1,p2; 2,p3 |]
+    let measures = [| 0,m1; 1,m2; 2,m3 |]
+    let bestPredicted,_ = predictions |> Array.sortBy (fun (i,v) -> v) |> Seq.head
+    let bestMeasured,_ = measures |> Array.sortBy (fun (i,v) -> v) |> Seq.head
+    //bestPredicted = bestMeasured
+    //(p1-m1)/m1,(p2-m2)/m2,(p3-m3)/m3
+    //p1,m1,p2,m2,p3,m3
+    //isfinite p1 && isfinite p2 && isfinite p3
+    //cond
+    { M = M; p1 = p1; p2 = p2; p3 = p3; m1 = m1; m2 = m2; m3 = m3; cond = cond; }
+
+let doManyAttempts target basissize =
+    let res = Array.init 100 (fun _ -> attempt target basissize)
+    let resm1 = Array.map 
+    let avg = res |> Array.average
+    let prod = res |> Array.map abs |> Array.reduce (*)
+    let geomAverage = Math.Pow(prod, 1.0 / float(res.Length))
+    let stddev = res |> Array.map (fun v -> (v-avg)*(v-avg)) |> Array.average |> sqrt
+    (avg, stddev, res.Length) //, stddev
+    //geomAverage
+let results = Array.init 5 (fun target -> Array.init 10 (fun measures -> doManyAttempts (float(target+1)) (1 + 2*measures)) )
 
 
+// BOOL
+let doManyAttempts target basissize =
+    let res = Array.init 100 (fun _ -> attempt target basissize) 
+    let ok = res |> Array.filter (fun b -> b) |> Array.length
+    float(ok)/float(res.Length)
+let results = Array.init 5 (fun target -> Array.init 10 (fun measures -> doManyAttempts (float(target+1)) (1 + 2*measures)) )
 
+let doManyAttempts target basissize =
+    let res = Array.init 100 (fun _ -> attempt target basissize) |> Array.filter isfinite
+    let avg = res |> Array.average
+    let prod = res |> Array.map abs |> Array.reduce (*)
+    let geomAverage = Math.Pow(prod, 1.0 / float(res.Length))
+    let stddev = res |> Array.map (fun v -> (v-avg)*(v-avg)) |> Array.average |> sqrt
+    (avg, stddev, res.Length) //, stddev
+    //geomAverage
+let results = Array.init 5 (fun target -> Array.init 10 (fun measures -> doManyAttempts (float(target+1)) (1 + 2*measures)) )
 
+Array.init 1000 (fun _ -> attempt 1.0 6) |> Array.filter isfinite |> Array.sort |> Array.mapi (fun i v -> (i,v)) |> Chart.Line
 
+let doManyAttempts target basissize =
+    let res = Array.init 100 (fun _ -> attempt target basissize) |> Array.map (fun (v1,v2,v3,c) -> [| v1; v2; v3 |]) |> Array.concat
+    //let res = res |> Array.map sqr
+    let avg = res |> Array.average
+    let prod = res |> Array.map abs |> Array.reduce (*)
+    let geomAverage = Math.Pow(prod, 1.0 / float(res.Length))
+    let stddev = res |> Array.map (fun v -> (v-avg)*(v-avg)) |> Array.average |> sqrt
+    avg, stddev
+    //geomAverage
+
+let results = Array.init 5 (fun target -> Array.init 10 (fun measures -> doManyAttempts (float(target+1)) (1 + 2*measures)) )
+
+let r1,r2,r3 = Array.init 1000 (fun i -> attempt 3.0 20) |> Array.unzip3
+
+let percentile (p:float) (data:float[]) =
+    let sorted = data |> Array.map abs |> Array.sort
+    let idx = int(float(sorted.Length) * p)
+    sorted.[idx]
+
+let percentiles data =
+    percentile 0.25 data, percentile 0.5 data, percentile 0.75 data
+
+let doCase alg size = 
+    Array.init 1000 (fun i -> attempt alg size) |> Array.map (fun (a,b,c) -> [|a;b;c|]) |> Array.concat
+let r = doCase 4.0 20
+
+percentiles r
