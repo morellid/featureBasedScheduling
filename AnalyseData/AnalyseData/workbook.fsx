@@ -329,7 +329,7 @@ experimentPredictDevice 30
 // pseudoinversa di M = M* = U* S* V
 // t = T x = T U* S* V b
 
-let pseudoinverse (M:Matrix) =
+let pseudoinverse (M:LinearAlgebra.Generic.Matrix<float>) =
   let D = M.Svd(true)
   let W = D.W()
   let s = D.S()
@@ -418,10 +418,10 @@ let getM target basis =
                                                             readAccessGlobal ; 
                                                             simple_op ; 
                                                             complex_op   (*; derived *) |])
-    let b = DenseVector.OfEnumerable( M_all.Column(target) |> Seq.toArray |> normColumn )
+    let b = DenseVector.OfEnumerable( M_all.Column(target) |> Seq.toArray (*|> normColumn*) )
     let M = DenseMatrix.OfColumnVectors(  M_all.ColumnEnumerator() |> Seq.filter(fun (i,v) -> contains basis i) |> Seq.map snd  |> Seq.toArray )
     // normalize rows
-    let M = DenseMatrix.OfRows(M.RowCount, M.ColumnCount, M.RowEnumerator() |> Seq.map snd |> Seq.map (Seq.toArray) |> Seq.map normColumn |> Seq.map (fun ary -> (seq<float>) ary))
+    let M = DenseMatrix.OfRows(M.RowCount, M.ColumnCount, M.RowEnumerator() |> Seq.map snd |> Seq.map (Seq.toArray) (* |> Seq.map normColumn*) |> Seq.map (fun ary -> (seq<float>) ary))
     M
 
 let target, basis = randomizedTargetBasis 1.0 6
@@ -515,6 +515,7 @@ percentiles r
 
 let distr = MathNet.Numerics.Distributions.ContinuousUniform()
 let distr0 = MathNet.Numerics.Distributions.ContinuousUniform(-1.0, 1.0)
+let distr1 = MathNet.Numerics.Distributions.ContinuousUniform(0.0, 2.0)
 
 //  ----- same program different size ----
 let referenceMeasures = DenseMatrix.CreateRandom(4, 1, distr)
@@ -546,11 +547,17 @@ let A = DenseMatrix.CreateRandom(resources, benchmarks, distr)
 let a = DenseMatrix.CreateRandom(10000, benchmarks, distr)
 let x = DenseMatrix.CreateRandom(benchmarks, 1, distr)
 let b = A * x
-// add some noise
+// add some absolute noise
 let noiseAmount = 0.10
 let A1 = A + DenseMatrix.CreateRandom(A.RowCount, A.ColumnCount, distr0) * noiseAmount *0.0 // * 0.0 means no noise here
 let a1 = a + DenseMatrix.CreateRandom(a.RowCount, a.ColumnCount, distr0) * noiseAmount *0.0     // noise here
 let b1 = b + DenseMatrix.CreateRandom(b.RowCount, b.ColumnCount, distr0) * noiseAmount *0.0 // no noise here
+// relative
+let one = Func<int,int,float>(fun i j -> 1.0)
+let noiseAmount = 0.25
+let A1 = A.PointwiseMultiply(DenseMatrix.CreateRandom(A.RowCount, A.ColumnCount, distr0) * noiseAmount + DenseMatrix.Create(A.RowCount, A.ColumnCount, one)) //*0.0 // * 0.0 means no noise here
+let a1 = a.PointwiseMultiply(DenseMatrix.CreateRandom(a.RowCount, a.ColumnCount, distr0) * noiseAmount + DenseMatrix.Create(a.RowCount, a.ColumnCount, one)) //*0.0     // noise here
+let b1 = b.PointwiseMultiply(DenseMatrix.CreateRandom(b.RowCount, b.ColumnCount, distr0) * noiseAmount + DenseMatrix.Create(b.RowCount, b.ColumnCount, one)) //*0.0 // no noise here
 
 let Aavg = A1.RowEnumerator() |> Seq.map (fun (i,v) -> v.Sum() / float(v.Count)) |> Seq.toArray
 let aavg = a1.RowEnumerator() |> Seq.map (fun (i,v) -> v.Sum() / float(v.Count)) |> Seq.toArray
@@ -570,7 +577,7 @@ let inv = pseudoinverse A1
 let predict = a1 * inv
 let estimate = predict * b1
 let exact = a * x
-estimate.PointwiseDivide(exact).Column(0) |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.toArray |> Array.mapi cons |> Chart.Line
+estimate.PointwiseDivide(exact).Column(0) |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.take 8000 |> Seq.toArray |> Array.mapi cons |> Chart.Line
 
 
 
@@ -594,15 +601,28 @@ let check (benchmarkData:LinearAlgebra.Generic.Matrix<float>) =
   let cond = benchmarkData.ConditionNumber()
 
 
-let preprocess (benchmarkData:LinearAlgebra.Generic.Matrix<float>) =
-  let inv = pseudoinverse benchmarkData
 
 
 
-dataTrasfFromDevice ; 
-readAccessGlobal ; 
-simple_op ; 
-complex_op
+let target, basis = randomizedTargetBasis 1.0 30
+let randData = Array.init arithmetic.Length (fun _ -> rnd.NextDouble())
+let M = getM target basis
+let publicData = DenseMatrix.OfRows(4,arithmetic.Length, [| randData ;
+                                                        dataTrasfFromDevice (*|> normColumn*); 
+                                                        readAccessGlobal (*|> normColumn*); 
+                                                        simple_op (*|> normColumn*); 
+                                                        complex_op  (*|> normColumn*) (*; derived *) |])
+let hiddenData = DenseMatrix.OfRows(3,arithmetic.Length, [| discreteGPUTime (* |> normColumn*); 
+                                                        integratedGPUTime (*|> normColumn*); 
+                                                        CPUTime (*|> normColumn*) |])
+let a = DenseMatrix.OfColumnVectors(hiddenData.ColumnEnumerator() |> Seq.filter (fun (i,r) -> contains basis i) |> Seq.map snd |> Seq.toArray )
+let b = publicData.Column(target).ToColumnMatrix()
+
+let inv = pseudoinverse M
+let predict = a * inv
+let estimate = predict * b
+let exact = hiddenData.Column(target).ToColumnMatrix()
+estimate.PointwiseDivide(exact).Column(0) |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.take 8000 |> Seq.toArray |> Array.mapi cons |> Chart.Line
 
 
 
@@ -628,12 +648,12 @@ type Result = {
  cond: float;
 }
 
-let contains (ary: int array) (value: int) =
+let contains (ary) (value) =
   ary |> Array.map (fun v -> v = value) |> Array.exists (id)
 
 let randomizedTargetBasis targetAlg basisSize =
     // filter out cases with work size too little, as .net overhead is larger than actual completion time
-    let lowerWorksize = 1024.0//*1024.0
+    let lowerWorksize = 0.0//1024.0//*1024.0
     let filtered = workSize |> Array.mapi (fun i v -> i,v) |> Array.filter (fun (i,v) -> v >= lowerWorksize) |> Array.map fst
     // take all the algorithm ids of each case, filter out cases with workload below lower limit
     let filteredIdxAlg = alg |> Array.mapi (fun i v -> i,v) |> Array.filter (fun (i,v) -> contains filtered i)|> Seq.toArray
@@ -646,6 +666,10 @@ let randomizedTargetBasis targetAlg basisSize =
     let casesNoTargetAlgNoTarget = casesNoTargetAlg |> Array.filter (fun i -> i <> target)
     // pick a random base to build the model with
     let basis = casesNoTargetAlgNoTarget |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.take basisSize |> Seq.toArray
+    // TMP: ONLY USE CASES FROM THE TARGET ALG
+    //let basis = casesTargetAlg |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.take basisSize |> Seq.toArray
+    let basis = casesTargetAlg //|> Seq.take (casesTargetAlg.Length - 1) |> Seq.toArray
+    //let basis = filteredIdxAlg |> Array.map fst
     target, basis
 
 let normColumn (col:float array) =
@@ -701,57 +725,158 @@ let attempt target basis =
     { M = M; p1 = p1; p2 = p2; p3 = p3; m1 = m1; m2 = m2; m3 = m3; cond = cond; }
 
 let getM target basis =
+    let normColumn v = v
     (*let M_all = DenseMatrix.OfRows(5,arithmetic.Length, [| dataTrasfFromHost |> normColumn; // |> Array.map (fun v -> 1.0); 
                                                             dataTrasfFromDevice |> normColumn; 
                                                             readAccessGlobal |> normColumn; 
                                                             simple_op |> normColumn; 
                                                             complex_op  |> normColumn (*; derived *) |])
     *)
-    let M_all = DenseMatrix.OfRows(4,arithmetic.Length, [| //dataTrasfFromHost ; // |> Array.map (fun v -> 1.0); 
-                                                            dataTrasfFromDevice |> normColumn; 
-                                                            readAccessGlobal |> normColumn; 
-                                                            simple_op |> normColumn; 
-                                                            complex_op |> normColumn |])
-    let b = DenseVector.OfEnumerable( M_all.Column(target) |> Seq.toArray |> normColumn )
+    let M_all = DenseMatrix.OfRows(4,arithmetic.Length, [| dataTrasfFromHost ; // |> Array.map (fun v -> 1.0); 
+                                                            //dataTrasfFromDevice |> normColumn; 
+                                                            //readAccessGlobal |> normColumn; 
+                                                            simple_op ;//|> normColumn; 
+                                                            complex_op ;//|> normColumn 
+                                                            dataTrasfFromHost |>  Array.map (fun v -> 1.0);
+                                                        |])
     let M = DenseMatrix.OfColumnVectors(  M_all.ColumnEnumerator() |> Seq.filter(fun (i,v) -> contains basis i) |> Seq.map snd  |> Seq.toArray )
     // normalize rows
     let M = DenseMatrix.OfRows(M.RowCount, M.ColumnCount, M.RowEnumerator() |> Seq.map snd |> Seq.map (Seq.toArray) |> Seq.map normColumn |> Seq.map (fun ary -> (seq<float>) ary))
     M
 
 
-// try using NMF
-let trypredict algfamily basisSize =
+/// generates a random selection of programs for an experiment 
+/// returns:
+/// a random target program in a specified family of algorithms
+/// a random basis (list of programs), in a specified list of possible families of algorithms
+/// the known measures of the basis (A)
+/// the known measures of the target program (b)
+/// the hidden measures of the basis (a)
+/// the hidden measures of the target program: the measure we want to predict
+let generateRandomCase (knownMeasures:DenseMatrix) (hiddenMeasures:DenseMatrix) targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize =
+    // the list of indices of possible targets
+    let casesTargetAlg = alg |> Array.mapi cons |> Array.filter (fun (i,v) -> v = targetAlgFamily) |> Array.map fst
+    // the list of indices of possible programs for the basis 
+    //let casesBasisAlgs = alg |> Array.mapi cons |> Array.filter (fun (i,v) -> contains allowedAlgFamiliesInBasis v) |> Array.map fst
+    let casesBasisAlgs = allowedAlgFamiliesInBasis |> Seq.map (fun sel -> alg |> Array.mapi cons |> Array.filter (fun (i,v) -> v = sel) |> Array.map fst)
+    let target = casesTargetAlg |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.head
+    //let basis = casesBasisAlgs |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.truncate maxBasisSize
+    let basis = casesBasisAlgs |> Seq.map (fun cases -> cases |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.truncate maxBasisSize ) |> Seq.concat
+    
+    let b =  knownMeasures.Column(target).ToColumnMatrix()
+    let A = DenseMatrix.OfColumns(knownMeasures.RowCount, basis |> Seq.length, basis |> Seq.map (fun i -> knownMeasures.Column(i) |> Seq.map id ) )
+    let a = DenseMatrix.OfColumns(hiddenMeasures.RowCount, basis |> Seq.length, basis |> Seq.map (fun i -> hiddenMeasures.Column(i) |> Seq.map id ) )
+    let secret = hiddenMeasures.Column(target).ToColumnMatrix()
+    target, basis, A, b, a, secret 
 
-    let rec doit () =
-        try
+/// does one prediction
+let predictCase targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize =    
+    let knownMeasures = DenseMatrix.OfRows(5,arithmetic.Length, [| 
+                                                            dataTrasfFromHost |> Array.map (fun v -> 1.0); 
+                                                            dataTrasfFromDevice ; 
+                                                            readAccessGlobal ; 
+                                                            simple_op ; 
+                                                            complex_op   (*; derived *);
+                                                            //integratedGPUTime |> Array.map (fun v -> 1.0); 
+                                                            //CPUTime |> Array.map (fun v -> 1.0); 
+                                                             |])
+    let hiddenMeasures = DenseMatrix.OfRows(3,arithmetic.Length, [| 
+                                                            integratedGPUTime (*|> normColumn*); 
+                                                            discreteGPUTime (*|> normColumn*); 
+                                                            CPUTime(*|> normColumn *) 
+                                                            |])
+    let target, basis, A, b, a, secret = generateRandomCase knownMeasures hiddenMeasures targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize
+//    let W,H,d = Energon.Solvers.NonNegativeMatrixFactorization A 5
+//    let Wstar = pseudoinverse W
+//    let Hstar = pseudoinverse H
+//    let h = a * Wstar
+//    let w = Hstar * b
+//    let predicted = h * w
+    let predict = a * pseudoinverse A
+    let predicted = predict * b
+    if true then
+        printfn "basis: %A" basis
+        printfn "A: %A" A
+        printfn "predict: %A" predict
+        printfn "relative error on M: %A" <| (predict * A).PointwiseDivide(a)
+        for i = 0 to predict.RowCount-1 do
+            printfn "%A" <| (predict.Row(i).ToColumnMatrix() * DenseMatrix.Create(1, A.ColumnCount, fun i j -> 1.0)).PointwiseMultiply(A)            
+    let measured = secret
+    let err = //(predicted - measured).Column(0) |> Seq.toArray 
+        predicted.PointwiseDivide(measured).Column(0) |> Seq.toArray
+    err    
+
+let res = Array.init 1 (fun _ -> predictCase 1.0 [|  1.0;   |] 150) |> Array.concat
+let inline cons a b = (a,b)
+res |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.truncate 270 |> Seq.toArray |> Array.mapi cons |> Chart.Line
+
+
+let knownMeasures = DenseMatrix.OfRows(5,arithmetic.Length, [| 
+                                                            dataTrasfFromHost |> Array.map (fun v -> 1.0); 
+                                                            dataTrasfFromDevice ; 
+                                                            readAccessGlobal ; 
+                                                            simple_op ; 
+                                                            complex_op   (*; derived *);
+                                                            //integratedGPUTime |> Array.map (fun v -> 1.0); 
+                                                            //CPUTime |> Array.map (fun v -> 1.0); 
+                                                             |])
+let hiddenMeasures = DenseMatrix.OfRows(1,arithmetic.Length, [| // (*|> normColumn*); 
+                                                             //discreteGPUTime (*|> normColumn*); 
+                                                             CPUTime(*|> normColumn *) |])
+let target, basis, A, b, a, secret = generateRandomCase knownMeasures hiddenMeasures 1.0 [| 1.0;  |] 200
+a * pseudoinverse A * A
+
+// try using NMF on real data
+let trypredict algfamily basisSize =
+    let  doit () =
             let target, basis = randomizedTargetBasis algfamily basisSize
+            let normColumn v = v
             let M = getM target basis
-            let publicData = DenseMatrix.OfRows(4,arithmetic.Length, [| dataTrasfFromDevice |> normColumn; 
-                                                                    readAccessGlobal |> normColumn; 
-                                                                    simple_op |> normColumn; 
-                                                                    complex_op  |> normColumn (*; derived *) |])
-            let hiddenData = DenseMatrix.OfRows(3,arithmetic.Length, [| discreteGPUTime |> normColumn; 
-                                                                    integratedGPUTime |> normColumn; 
-                                                                    CPUTime |> normColumn |])
+            let publicData = DenseMatrix.OfRows(4,arithmetic.Length, [| dataTrasfFromHost ; // |> Array.map (fun v -> 1.0); 
+                                                            //dataTrasfFromDevice |> normColumn; 
+                                                            //readAccessGlobal |> normColumn; 
+                                                            simple_op ; //|> normColumn; 
+                                                            complex_op; // |> normColumn 
+                                                            dataTrasfFromHost |>  Array.map (fun v -> 1.0);
+                                                        |])
+//            let publicData = DenseMatrix.OfRows(4,arithmetic.Length, [| dataTrasfFromDevice |> normColumn; 
+//                                                                    readAccessGlobal |> normColumn; 
+//                                                                    simple_op |> normColumn; 
+//                                                                    complex_op  |> normColumn (*; derived *) |])
+            let hiddenData = DenseMatrix.OfRows(3,arithmetic.Length, [| discreteGPUTime (*|> normColumn*); 
+                                                                    integratedGPUTime (*|> normColumn*); 
+                                                                    CPUTime (*|> normColumn *) |])
             let a = DenseMatrix.OfColumnVectors(hiddenData.ColumnEnumerator() |> Seq.filter (fun (i,r) -> contains basis i) |> Seq.map snd |> Seq.toArray )
-            let W,H,d = Energon.Solvers.NonNegativeMatrixFactorization M 3
-            //let reconstructed = H * W
-            //M - reconstructed
-            let Wstar = pseudoinverse W
-            let Hstar = pseudoinverse H
             let b = publicData.Column(target).ToColumnMatrix()
-            let predicted = a * (Wstar * Hstar) * b
+//            let W,H,d = Energon.Solvers.NonNegativeMatrixFactorization M 5
+//            let Wstar = pseudoinverse W
+//            let Hstar = pseudoinverse H
+//            let h = a * Wstar
+//            let w = Hstar * b
+//            let predicted = h * w
+            let predict = a * pseudoinverse M
+            if false then
+                printfn "basis: %A" basis
+                printfn "M: %A" M
+                printfn "predict: %A" predict
+                printfn "relative error on M: %A" <| (predict * M).PointwiseDivide(a)
+                for i = 0 to predict.RowCount-1 do
+                  printfn "%A" <| (predict.Row(i).ToColumnMatrix() * DenseMatrix.Create(1, M.ColumnCount, fun i j -> 1.0)).PointwiseMultiply(M)            
+            let predicted = predict * b
             let measured = DenseMatrix.OfColumnVectors(hiddenData.ColumnEnumerator() |> Seq.filter (fun (i,r) -> i = target) |> Seq.map snd |> Seq.toArray )
-            let err = predicted.PointwiseDivide(measured).Column(0) |> Seq.toArray
+            let err = //(predicted - measured).Column(0) |> Seq.toArray 
+                predicted.PointwiseDivide(measured).Column(0) |> Seq.toArray
             err
-        with
-        | _ -> doit ()
-    let res = Array.init 1000 (fun _ -> doit ())
+    let res = Array.init 100 (fun _ -> doit ())
     res |> Array.concat
 
-let res = trypredict 2.0 51
-res |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.toArray |> Array.filter (fun v -> v < 2.0) |> Array.mapi cons |> Chart.Line
+//randomizedTargetBasis 2.0 5
+let res = trypredict 5.0 7
+let inline cons a b = (a,b)
+res |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.toArray |> Array.mapi cons |> Chart.Line
 
+
+// ---------------- try NMF on synthetic data ---------------- 
 
 // H W = A
 // h W = a
@@ -761,28 +886,56 @@ res |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.toArray |> Array.filt
 // h = a W*
 // a W* H* b = ?
 
-
-//  ----- independent programs ----
+let one = Func<int,int,float>(fun i j -> 1.0)
+// ------ hidden factors -----------
 let benchmarks = 4
 let resources = 4
-let A = DenseMatrix.CreateRandom(resources, benchmarks, distr)
-let a = DenseMatrix.CreateRandom(1000, benchmarks, distr)
-let x = DenseMatrix.CreateRandom(benchmarks, 1, distr)
-let b = A * x
-// add some noise
-let noiseAmount = 0.25
-let A1 = A + DenseMatrix.CreateRandom(A.RowCount, A.ColumnCount, distr0) * noiseAmount //*0.0 // * 0.0 means no noise here
-let a1 = a + DenseMatrix.CreateRandom(a.RowCount, a.ColumnCount, distr0) * noiseAmount //*0.0     // noise here
-let b1 = b + DenseMatrix.CreateRandom(b.RowCount, b.ColumnCount, distr0) * noiseAmount //*0.0 // no noise here
+let hiddenFactors = 7
+let factorsCosts = DenseMatrix.CreateRandom(resources, hiddenFactors, distr)
+let benchmarkComposition = DenseMatrix.CreateRandom(hiddenFactors, benchmarks, distr)
+let A = factorsCosts * benchmarkComposition
+let targetComposition = DenseMatrix.CreateRandom(hiddenFactors, 1, distr)
+let factorsHiddenCosts = DenseMatrix.CreateRandom(1000, hiddenFactors, distr)
+let a = factorsHiddenCosts * benchmarkComposition
+let b = factorsCosts * targetComposition
+let measured = factorsHiddenCosts * targetComposition
 
-let W,H,d = Energon.Solvers.NonNegativeMatrixFactorization A1 3
+//  ----- independent benchmarks ----
+//let A = DenseMatrix.CreateRandom(resources, benchmarks, distr)
+////let A = DenseMatrix.Identity(4)
+//let a = DenseMatrix.CreateRandom(1000, benchmarks, distr)
+//let x = DenseMatrix.CreateRandom(benchmarks, 1, distr)
+//// target program perfect linear combination
+//let b = A * x
+//let measured = a * x
+
+// add some multiplicative noise
+let noiseAmount = 0.1
+let A1 = A.PointwiseMultiply(DenseMatrix.CreateRandom(A.RowCount, A.ColumnCount, distr0) * noiseAmount + DenseMatrix.Create(A.RowCount, A.ColumnCount, one)) //*0.0 // * 0.0 means no noise here
+let a1 = a.PointwiseMultiply(DenseMatrix.CreateRandom(a.RowCount, a.ColumnCount, distr0) * noiseAmount + DenseMatrix.Create(a.RowCount, a.ColumnCount, one)) //*0.0     // noise here
+let b1 = b.PointwiseMultiply(DenseMatrix.CreateRandom(b.RowCount, b.ColumnCount, distr0) * noiseAmount + DenseMatrix.Create(b.RowCount, b.ColumnCount, one)) //*0.0 // no noise here
+// additive noise
+//let A1 = A + (DenseMatrix.CreateRandom(A.RowCount, A.ColumnCount, distr0) * noiseAmount)  //*0.0 // * 0.0 means no noise here
+//let a1 = a + (DenseMatrix.CreateRandom(a.RowCount, a.ColumnCount, distr0) * noiseAmount)  //*0.0     // noise here
+//let b1 = b + (DenseMatrix.CreateRandom(b.RowCount, b.ColumnCount, distr0) * noiseAmount)  //*0.0 // no noise here
+
+
+let A1 = DenseMatrix.OfMatrix(A1)
+
+let W,H,d = Energon.Solvers.NonNegativeMatrixFactorization A1 7
 
 // a W* H* b = ?
-let measure = a * x
 let Wstar = pseudoinverse W
 let Hstar = pseudoinverse H
-let predicted = a1 * (Wstar * Hstar) * b1
-let errors = predicted.PointwiseDivide(measure).Column(0) |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.toArray |> Array.mapi cons |> Chart.Line
+let h = a1 * Wstar
+let w = Hstar * b1
+let predicted = h * w
+//(H * W) - A1
+//(Wstar * Hstar) - (pseudoinverse A1)
+//let predicted = a1 * (Wstar * Hstar) * b1
+//let predicted = (a1 * Wstar) * (Hstar * b1)
+//let predicted = a1 * (pseudoinverse A1) * b1
+let errors = predicted.PointwiseDivide(measured).Column(0) |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.take 800 |> Seq.toArray |> Array.mapi cons |> Chart.Line
 
 let Aavg = A1.RowEnumerator() |> Seq.map (fun (i,v) -> v.Sum() / float(v.Count)) |> Seq.toArray
 let aavg = a1.RowEnumerator() |> Seq.map (fun (i,v) -> v.Sum() / float(v.Count)) |> Seq.toArray
