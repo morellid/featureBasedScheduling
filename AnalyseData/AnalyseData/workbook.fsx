@@ -757,11 +757,9 @@ let generateRandomCase (knownMeasures:DenseMatrix) (hiddenMeasures:DenseMatrix) 
     // the list of indices of possible targets
     let casesTargetAlg = alg |> Array.mapi cons |> Array.filter (fun (i,v) -> v = targetAlgFamily) |> Array.map fst
     // the list of indices of possible programs for the basis 
-    //let casesBasisAlgs = alg |> Array.mapi cons |> Array.filter (fun (i,v) -> contains allowedAlgFamiliesInBasis v) |> Array.map fst
-    let casesBasisAlgs = allowedAlgFamiliesInBasis |> Seq.map (fun sel -> alg |> Array.mapi cons |> Array.filter (fun (i,v) -> v = sel) |> Array.map fst)
+    let casesBasisAlgs = alg |> Array.mapi cons |> Array.filter (fun (i,v) -> contains allowedAlgFamiliesInBasis v) |> Array.map fst
     let target = casesTargetAlg |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.head
-    //let basis = casesBasisAlgs |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.truncate maxBasisSize
-    let basis = casesBasisAlgs |> Seq.map (fun cases -> cases |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.truncate maxBasisSize ) |> Seq.concat
+    let basis = casesBasisAlgs |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.truncate maxBasisSize
     
     let b =  knownMeasures.Column(target).ToColumnMatrix()
     let A = DenseMatrix.OfColumns(knownMeasures.RowCount, basis |> Seq.length, basis |> Seq.map (fun i -> knownMeasures.Column(i) |> Seq.map id ) )
@@ -776,55 +774,38 @@ let predictCase targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize =
                                                             dataTrasfFromDevice ; 
                                                             readAccessGlobal ; 
                                                             simple_op ; 
-                                                            complex_op   (*; derived *);
-                                                            //integratedGPUTime |> Array.map (fun v -> 1.0); 
-                                                            //CPUTime |> Array.map (fun v -> 1.0); 
-                                                             |])
-    let hiddenMeasures = DenseMatrix.OfRows(3,arithmetic.Length, [| 
+                                                            complex_op   (*; derived *) |])
+    let hiddenMeasures = DenseMatrix.OfRows(3,arithmetic.Length, [| discreteGPUTime (*|> normColumn*); 
                                                             integratedGPUTime (*|> normColumn*); 
-                                                            discreteGPUTime (*|> normColumn*); 
-                                                            CPUTime(*|> normColumn *) 
-                                                            |])
+                                                            CPUTime (*|> normColumn *) |])
     let target, basis, A, b, a, secret = generateRandomCase knownMeasures hiddenMeasures targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize
-//    let W,H,d = Energon.Solvers.NonNegativeMatrixFactorization A 5
+//    let W,H,d = Energon.Solvers.NonNegativeMatrixFactorization M 5
 //    let Wstar = pseudoinverse W
 //    let Hstar = pseudoinverse H
 //    let h = a * Wstar
 //    let w = Hstar * b
 //    let predicted = h * w
     let predict = a * pseudoinverse A
-    let predicted = predict * b
     if true then
         printfn "basis: %A" basis
-        printfn "A: %A" A
+        printfn "M: %A" A
         printfn "predict: %A" predict
         printfn "relative error on M: %A" <| (predict * A).PointwiseDivide(a)
         for i = 0 to predict.RowCount-1 do
             printfn "%A" <| (predict.Row(i).ToColumnMatrix() * DenseMatrix.Create(1, A.ColumnCount, fun i j -> 1.0)).PointwiseMultiply(A)            
+    let predicted = predict * b
     let measured = secret
     let err = //(predicted - measured).Column(0) |> Seq.toArray 
         predicted.PointwiseDivide(measured).Column(0) |> Seq.toArray
     err    
 
-let res = Array.init 1 (fun _ -> predictCase 1.0 [|  1.0;   |] 150) |> Array.concat
+predictCase 1.0 [| 1.0;|] 100
+
+let res = Array.init 100 (fun _ -> predictCase 1.0 [|  4.0; 5.0 |] 20) |> Array.concat
 let inline cons a b = (a,b)
-res |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.truncate 270 |> Seq.toArray |> Array.mapi cons |> Chart.Line
+res |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.take 270 |> Seq.toArray |> Array.mapi cons |> Chart.Line
 
 
-let knownMeasures = DenseMatrix.OfRows(5,arithmetic.Length, [| 
-                                                            dataTrasfFromHost |> Array.map (fun v -> 1.0); 
-                                                            dataTrasfFromDevice ; 
-                                                            readAccessGlobal ; 
-                                                            simple_op ; 
-                                                            complex_op   (*; derived *);
-                                                            //integratedGPUTime |> Array.map (fun v -> 1.0); 
-                                                            //CPUTime |> Array.map (fun v -> 1.0); 
-                                                             |])
-let hiddenMeasures = DenseMatrix.OfRows(1,arithmetic.Length, [| // (*|> normColumn*); 
-                                                             //discreteGPUTime (*|> normColumn*); 
-                                                             CPUTime(*|> normColumn *) |])
-let target, basis, A, b, a, secret = generateRandomCase knownMeasures hiddenMeasures 1.0 [| 1.0;  |] 200
-a * pseudoinverse A * A
 
 // try using NMF on real data
 let trypredict algfamily basisSize =
