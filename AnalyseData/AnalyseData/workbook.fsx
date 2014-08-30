@@ -1,6 +1,6 @@
 ﻿open System
 
-#I @"X:\Projects\EnergonWin8\packages\FSharp.Charting.0.90.6"
+#I @"U:\Projects\EnergonWin8\packages\FSharp.Charting.0.90.6"
 #load "FSharp.Charting.fsx"
 
 
@@ -8,7 +8,7 @@ open FSharp.Charting
 
 // ----------- Load data --------------
 
-let datafolder = @"X:\Projects\featureBasedScheduling\Dati"
+let datafolder = @"U:\Projects\featureBasedScheduling\Dati"
 
 // merge convolution files
 //let csvfiles = System.IO.Directory.EnumerateFiles(datafolder, "FeatureExtractionResults.csv")
@@ -88,8 +88,8 @@ let allMem = sumArrays readAccessGlobal writeAccessGlobal |> sumArrays readAcces
 let memTot = mulArrays workSize allMem
 let derived = divArrays (sumArrays (dataTrasfFromHost) (dataTrasfFromDevice)) memTot
 
-#r @"X:\Projects\featureBasedScheduling\AnalyseData\packages\MathNet.Numerics.FSharp.2.6.0\lib\net40\MathNet.Numerics.FSharp.dll"
-#I @"X:\Projects\featureBasedScheduling\AnalyseData\packages\MathNet.Numerics.2.6.2\lib\net40"
+#r @"U:\Projects\featureBasedScheduling\AnalyseData\packages\MathNet.Numerics.FSharp.2.6.0\lib\net40\MathNet.Numerics.FSharp.dll"
+#I @"U:\Projects\featureBasedScheduling\AnalyseData\packages\MathNet.Numerics.2.6.2\lib\net40"
 #r @"MathNet.Numerics.dll"
 #r @"MathNet.Numerics.IO.dll"
 open MathNet.Numerics
@@ -101,6 +101,7 @@ open MathNet.Numerics.LinearAlgebra.Double
 
 let rnd = new System.Random()
 
+let mat (rows:(float seq) array) = DenseMatrix.OfRows(rows |> Seq.length ,rows.[0] |> Seq.length, rows)
 
 
 
@@ -108,7 +109,7 @@ let rnd = new System.Random()
 // ------------------------------------------------------------------------------
 
 
-#I @"X:\Projects\EnergonWin8\packages\FSharp.Charting.0.90.6"
+#I @"U:\Projects\EnergonWin8\packages\FSharp.Charting.0.90.6"
 #load "FSharp.Charting.fsx"
 
 
@@ -154,6 +155,7 @@ let percentile (p:float) (data:float[]) =
 let percentiles data =
     percentile 0.25 data, percentile 0.5 data, percentile 0.75 data
 
+let inline cons a b = (a,b)
 
 
 
@@ -245,7 +247,7 @@ estimate.PointwiseDivide(exact).Column(0) |> Seq.map (fun v -> abs (v - 1.0)) |>
 // -------------------- NMF -------------------------
 
 
-#r @"X:\Projects\EnergonWin8\Solvers\bin\Debug\Solvers.dll"
+#r @"U:\Projects\EnergonWin8\Solvers\bin\Debug\Solvers.dll"
 open Energon.Solvers
 
 let NMFSolver = Energon.Solvers.predictUsingNonNegativeMatrixFactorization
@@ -291,6 +293,7 @@ let randomizedTargetBasis targetAlg basisSize =
 let normColumn (col:float array) =
   let m = Array.max col
   col |> Array.map (fun v -> v/m)
+
 (*
 // zero centered
 let normColumn col =
@@ -374,7 +377,6 @@ let basis = [|  3.0; |]
 let size = 200
 let res = Array.init 100 (fun _ -> predictCase target basis size) |> Array.concat
 let title = sprintf "%A %A %A" target basis size 
-let inline cons a b = (a,b)
 res |> Seq.map (fun v -> abs (v - 1.0)) |> Seq.sort |> Seq.truncate 100 |> Seq.toArray |> Array.mapi cons |> Chart.Line |> Chart.WithTitle title
 
 //  ----------------------- predict best device ----------------------- 
@@ -441,17 +443,18 @@ let success = float(yeah)/float(res.Length)
 let predictCase targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize = 
        
     let normColumn (x:_[]) = Array.map2 (/) x integratedGPUTime
-    let knownMeasures = DenseMatrix.OfRows(3,arithmetic.Length, [| 
-                                                            dataTrasfFromHost |> Array.map (fun v -> 1.0) |> normColumn; 
-                                                            dataTrasfFromDevice|> normColumn; 
-                                                            //readAccessGlobal ; 
-                                                            //simple_op |> normColumn; 
-                                                            complex_op |> normColumn  (*; derived *) 
-                                                            |])
-    let hiddenMeasures = DenseMatrix.OfRows(2,arithmetic.Length, [| 
-                                                            discreteGPUTime |> normColumn; 
-                                                            //integratedGPUTime |> normColumn; 
-                                                            CPUTime |> normColumn  |])
+    //let normColumn (x:_[]) = Array.map2 (/) x (dataTrasfFromHost |> Array.map (fun v -> 1.0))
+    let knownMeasures = mat [| dataTrasfFromHost |> Array.map (fun v -> 1.0) |> normColumn; 
+                               dataTrasfFromDevice|> normColumn; 
+                               //readAccessGlobal ; 
+                               simple_op |> normColumn; 
+                               complex_op |> normColumn  (*; derived *) ;
+                               |]
+    let hiddenMeasures = mat [| 
+                               discreteGPUTime |> normColumn; 
+                                 integratedGPUTime |> normColumn; 
+                                CPUTime |> normColumn  
+                              |]
     let target, basis, A, b, a, secret = generateRandomCase knownMeasures hiddenMeasures targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize
 //    let W,H,d = Energon.Solvers.NonNegativeMatrixFactorization A 5
 //    let Wstar = pseudoinverse W
@@ -464,15 +467,14 @@ let predictCase targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize =
     if false then
         printfn "basis: %A" basis
         printfn "M: %A" A
-        printfn "predict: %A" predict
-        printfn "relative error on M: %A" <| (predict * A).PointwiseDivide(a)
-        for i = 0 to predict.RowCount-1 do
-            printfn "%A" <| (predict.Row(i).ToColumnMatrix() * DenseMatrix.Create(1, A.ColumnCount, fun i j -> 1.0)).PointwiseMultiply(A)            
+        //printfn "predict: %A" predict
+        //printfn "relative error on M: %A" <| (predict * A).PointwiseDivide(a)
+        //for i = 0 to predict.RowCount-1 do
+        //    printfn "%A" <| (predict.Row(i).ToColumnMatrix() * DenseMatrix.Create(1, A.ColumnCount, fun i j -> 1.0)).PointwiseMultiply(A)            
     let measured = secret
     let err = //(predicted - measured).Column(0) |> Seq.toArray 
         predicted.PointwiseDivide(measured).Column(0) |> Seq.toArray
         
-
     let denorm = integratedGPUTime.[target]
     let realPredictions = predicted.Multiply(denorm)
     let realMeasures = measured.Multiply(denorm)
@@ -481,12 +483,18 @@ let predictCase targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize =
     minIndex = minIndexReal, err, realPredictions, realMeasures
 
 
-let res = Array.init 1000 (fun _ -> let order, err, pred, meas = predictCase 5.0 [| 5.0 |] 10000 in abs(pred.[1,0] / meas.[1,0] - 1.0))
+let res = Array.init 1000 (fun _ -> let order, err, pred, meas = predictCase 5.0 [| 5.0; |] 10 in abs(pred.[1,0] / meas.[1,0] - 1.0))
+
+//let res = Array.init 1000 (fun _ -> let order, err, pred, meas = predictCase 5.0 [|  5.0; |] 100 in (pred.[1,0] / meas.[1,0] - 1.0))
 res |> Array.sort |> Array.mapi cons |> Chart.Line
 
+saveRes res "errors_target5_basis5_featuresAll.dat"
 
-
-
+let saveRes (res:float array) (filename:string) =
+    let sb = new System.Text.StringBuilder()
+    res |> Array.iter (fun (v:float) -> sb.AppendLine(String.Format(@"{0}", v)) |> ignore)
+    let path = String.Format(@"U:\Projects\featureBasedSchedulingPaper\data\{0}", filename)
+    System.IO.File.WriteAllText(path, sb.ToString())
 
 
 
@@ -553,53 +561,6 @@ res |> Seq.map (fun (p,m) -> p/m-1.0) |> Seq.toArray |> Array.mapi cons |> Chart
 
 
 
-// ------------- try to find a case where permutation changes prediction ------------------
-
-let generateRandomCase2 targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize =
-    // the list of indices of possible targets
-    let casesTargetAlg = alg |> Array.mapi cons |> Array.filter (fun (i,v) -> v = targetAlgFamily) |> Array.map fst
-    // the list of indices of possible programs for the basis 
-    //let casesBasisAlgs = alg |> Array.mapi cons |> Array.filter (fun (i,v) -> contains allowedAlgFamiliesInBasis v) |> Array.map fst
-    let casesBasisAlgs = allowedAlgFamiliesInBasis |> Seq.map (fun sel -> alg |> Array.mapi cons |> Array.filter (fun (i,v) -> v = sel) |> Array.map fst)
-    let target = casesTargetAlg |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.head
-    //let basis = casesBasisAlgs |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.truncate maxBasisSize |> Seq.sortBy (id) // |> Seq.sortBy (fun _ -> rnd.NextDouble())
-    let basis = casesBasisAlgs |> Seq.map (fun cases -> cases |> Array.map (fun i -> i, rnd.NextDouble()) |> Array.sortBy snd |> Array.map fst |> Seq.truncate maxBasisSize ) |> Seq.concat |> Seq.sort |> Seq.toArray
-    let basisPermutated = basis |> Seq.sortBy (fun _ -> rnd.NextDouble()) |> Seq.toArray
-    target, basis, basisPermutated
-
-
-let predictCase2 targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize =    
-    let normColumn (x:_[]) = Array.map2 (/) x integratedGPUTime
-    let knownMeasures = DenseMatrix.OfRows(3,arithmetic.Length, [| 
-                                                            dataTrasfFromHost |> Array.map (fun v -> 1.0) |> normColumn; 
-                                                            dataTrasfFromDevice|> normColumn; 
-                                                            //readAccessGlobal ; 
-                                                            //simple_op |> normColumn; 
-                                                            complex_op |> normColumn  (*; derived *) 
-                                                            |])
-    let hiddenMeasures = DenseMatrix.OfRows(1,arithmetic.Length, [| //discreteGPUTime (*|> normColumn*); 
-                                                            //integratedGPUTime (*|> normColumn*); 
-                                                            CPUTime |> normColumn  |])
-    let target, basisOrdered, basisPermutated = generateRandomCase2 targetAlgFamily allowedAlgFamiliesInBasis maxBasisSize
-    let testOrdered    = (predictFixedCase target basisOrdered   ) |> Array.map (fun (x,y) -> x/y)
-    let testPermutated = (predictFixedCase target basisPermutated) |> Array.map (fun (x,y) -> x/y) 
-    if not (Seq.forall2 (fun a b -> abs(a/b-1.0)<1.e-4) testOrdered testPermutated ) then
-        printfn "target %A" target
-        printfn "basisOrdered %A" basisOrdered
-        printfn "basisPermutated %A" basisPermutated
-        printfn "errors ordered %A" testOrdered
-        printfn "errore permutated %A" testPermutated
-
-    true
-
-let testFamily algFamily =
-    Array.init 100 (fun size -> predictCase2 algFamily [| algFamily |] (1+size))
-let testall () =
-    Array.init 5 (fun i -> testFamily (float(1+i))) |> Array.concat |> Array.length
-
-Array.init 1000000 (fun _ -> testall())
-
-predictFixedCase 9 [| 9; 12 |]
 
 // ---------------- try NMF on synthetic data ---------------- 
 
@@ -789,3 +750,44 @@ let svd = A.Svd(true)
 svd.S()
 svd.U()
 pseudoinverse A
+
+
+// write data to csv
+let allMeasures = (mat [| 
+                            alg;
+                            dataTrasfFromDevice; 
+                            //readAccessGlobal ; 
+                            //simple_op |> normColumn; 
+                            complex_op ;
+                            discreteGPUTime ; 
+                            integratedGPUTime ; 
+                            CPUTime 
+                            |]).Transpose()
+
+let stringona = allMeasures.ToString(allMeasures.RowCount, allMeasures.ColumnCount)
+System.IO.File.WriteAllText(@"U:\Projects\featureBasedSchedulingPaper\data\allMeasures.csv", stringona)
+
+
+
+
+
+let distr = MathNet.Numerics.Distributions.ContinuousUniform(-0.1, 0.1)
+let knownMeasures = mat [|
+                            //[| 1.0; 1.0; 1.0 |];
+                            [| 1.0; 4.0; 9.0 |];
+                            [| 1.0; 2.0; 3.0 |];
+                        |] //+ DenseMatrix.CreateRandom(3,3,distr)
+
+let hiddenMeasures = mat [|
+                            [| 2.0; 5.0; 10.0 |];
+                            [| 3.0; 9.0; 19.0 |];
+                            [| 4.0; 7.0; 12.0 |];
+                        |] //+ DenseMatrix.CreateRandom(3,3,distr)
+
+let norms = knownMeasures.ColumnEnumerator() |> Seq.map (fun (i,col) -> 0.0 + 1.0 * hiddenMeasures.[i,2] ) |> Seq.toArray
+
+let knownMeasures = knownMeasures.PointwiseDivide(mat (Array.init (knownMeasures.RowCount) (fun  _ -> norms |> Seq.map (id))))
+let hiddenMeasures = hiddenMeasures.PointwiseDivide(mat (Array.init (hiddenMeasures.RowCount) (fun  _ -> norms |> Seq.map (id))))
+let Minv = pseudoinverse knownMeasures
+(hiddenMeasures * Minv * knownMeasures).PointwiseDivide(hiddenMeasures)
+ 
