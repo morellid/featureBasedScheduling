@@ -1,8 +1,0 @@
-Discrete GPU Completion time (ms); Integrated GPU Completion time (ms); CPU completion time (ms); Matrix size (elements); Filter size (elements);Global work size dim 1 (number of threads);Global work size dim 2 (number of threads);Global work size dim 3 (number of threads);Local work size dim 1 (number of threads);Local work size dim 2 (number of threads);Local work size dim 3 (number of threads);Data size transf from host to device (bytes);Data size transf from device to host (bytes);Data size allocated locally (bytes);Branch count (per thread);Read accesses to global memory (per thread);Write accesses to global memory (per thread);Read accesses to local memory (per thread);Write accesses to local memory (per thread);Read accesses to constant memory (per thread);Arithmetic operations (per thread)
-3.82;4.37666666666667;3.39333333333333;4096;25;64;64;1;16;16;1;18596;16384;0;8.75;11.875;1;0;0;11.875;107.5
-5.22333333333333;4.74;3.60333333333333;16384;25;128;128;1;16;16;1;69796;65536;0;8.75;11.875;1;0;0;11.875;107.5
-4.17333333333333;4.31333333333333;3.98;65536;25;256;256;1;16;16;1;270500;262144;0;8.75;11.875;1;0;0;11.875;107.5
-4.64666666666667;5.02666666666667;4.86;262144;25;512;512;1;16;16;1;1065124;1048576;0;8.75;11.875;1;0;0;11.875;107.5
-7.73333333333333;6.91;10.6866666666667;1048576;25;1024;1024;1;16;16;1;4227236;4194304;0;8.75;11.875;1;0;0;11.875;107.5
-19.57;14.84;34.03;4194304;25;2048;2048;1;16;16;1;16842916;16777216;0;8.75;11.875;1;0;0;11.875;107.5
-75.11;52.5433333333333;126.076666666667;16777216;25;4096;4096;1;16;16;1;67240100;67108864;0;8.75;11.875;1;0;0;11.875;107.5
